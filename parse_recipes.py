@@ -565,12 +565,62 @@ def url_to_label(url):
     return "🔗 外部レシピリンク"
 
 
+def merge_existing_url_names(recipes):
+    """既存 recipes.json から fetch_urls.py が取得したURL名・説明を引き継ぐ"""
+    if not os.path.exists(OUTPUT_PATH):
+        return recipes
+    try:
+        with open(OUTPUT_PATH, encoding="utf-8") as f:
+            old = json.load(f)
+    except Exception:
+        return recipes
+
+    # 旧データのURL → {name, description, flavor, genre, ...} マッピング
+    old_by_url = {}
+    for r in old:
+        url = r.get("url")
+        if url and r.get("source_type") == "url":
+            old_by_url[url] = r
+
+    updated = 0
+    generic_labels = {"🔗 外部レシピリンク", "👩‍🍳 Nadia レシピ", "🍳 Cookpad レシピ",
+                      "🏠 クラシル レシピ", "🎬 デリッシュキッチン レシピ",
+                      "🛍 楽天レシピ", "🧂 味の素レシピ", "🥚 キユーピー レシピ",
+                      "🌿 大地を守る会 レシピ", "▶️ YouTube 動画",
+                      "📸 Instagram", "🎵 TikTok", "🐦 Twitter/X"}
+    for r in recipes:
+        if r.get("source_type") != "url":
+            continue
+        url = r.get("url")
+        old_r = old_by_url.get(url)
+        if not old_r:
+            continue
+        # 旧データで名前が取得済み（汎用ラベルでない）なら引き継ぐ
+        old_name = old_r.get("name", "")
+        if old_name and old_name not in generic_labels:
+            r["name"] = old_name
+            if old_r.get("description"):
+                r["description"] = old_r["description"]
+            if old_r.get("flavor"):
+                r["flavor"] = old_r["flavor"]
+            if old_r.get("genre") and old_r["genre"] != ["和風"]:
+                r["genre"] = old_r["genre"]
+            if old_r.get("ingredients_key"):
+                r["ingredients_key"] = old_r["ingredients_key"]
+            updated += 1
+
+    if updated:
+        print(f"   既存URL名を引き継ぎ: {updated}件")
+    return recipes
+
+
 def main():
     print(f"📖 読み込み中: {LINE_CHAT_PATH}")
     messages = parse_line_chat(LINE_CHAT_PATH)
     print(f"   メッセージ数: {len(messages)}")
 
     recipes = build_recipes(messages)
+    recipes = merge_existing_url_names(recipes)  # 取得済みURL名を引き継ぐ
     print(f"   レシピ件数: {len(recipes)}")
 
     source_counts = {}
