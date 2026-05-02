@@ -302,7 +302,7 @@ def is_365_list(content):
 
 
 def extract_url_ideas(content):
-    """テキストアイデア（短文）を抽出"""
+    """テキストアイデア（短文）を抽出 — レシピ関連のみ"""
     stripped = content.strip()
     if len(stripped) > 200:
         return None
@@ -310,26 +310,115 @@ def extract_url_ideas(content):
         return None
     if "[写真]" in stripped or "[スタンプ]" in stripped:
         return None
-    if "が" in stripped[:10] and ("追加" in stripped or "変更" in stripped):
-        return None
     if len(stripped) < 5:
         return None
-    # 材料行・手順行を除外
-    if stripped.startswith("•") or stripped.startswith("・"):
+
+    # システム・操作系メッセージを除外
+    if "がメッセージの送信を取り消しました" in stripped:
+        return None
+    if "が" in stripped[:10] and ("追加" in stripped or "変更" in stripped):
+        return None
+
+    # 材料行・手順行の断片を除外
+    if stripped.startswith(("•", "・", "→", "↑", "⸻", "---", "⁨", "*", "＊")):
         return None
     if re.match(r'^\s*\d+\.\s', stripped):
         return None
     if re.search(r'[:：]\s*(少々|適量|大さじ|小さじ|ml|g|本|枚|缶|個)', stripped):
         return None
-    # システムメッセージを除外
-    if "がメッセージの送信を取り消しました" in stripped:
+    # カロリー数値の断片（100倍シリーズの断片）
+    if re.search(r':\s*\d+kcal|kcal$|\d+〜\d+kcal', stripped):
         return None
-    # きゅうり関連でないノイズを除外
-    ignore_prefixes = ["↑", "→", "⸻", "---", "⁨", "了解", "どれ行きます",
-                       "次どうしますか", "必要なら次", "ここまでで", "👉"]
+
+    # AIレスポンスの冒頭・末尾フレーズ
+    ignore_prefixes = ["了解", "どれ行きます", "次どうしますか", "必要なら次",
+                       "ここまでで", "👉", "続きについて", "ご希望に合わせて",
+                       "いいですね", "なるほど", "確かに", "方向を変えて",
+                       "■ まとめ", "■ ポイント", "この企画で", "もし「売る」",
+                       "完全に遊び", "もしテーマ決め"]
     if any(stripped.startswith(p) for p in ignore_prefixes):
         return None
-    return stripped
+
+    # 会話・反応・意見（レシピ情報でない）
+    non_recipe_phrases = [
+        "美味しそう", "作ってあれば一本ペロッと",
+        "どうでしょうか？", "どうでしょう？",
+        "なんて、", "なかなか直近では",
+        "さかえの料理長さんに頼めば", "作ってもらえたら販促",
+        "みやぞんの番組のレシピ", "みやぞんの番組",
+        "全部美味しそう", "10パターン作っちゃう",
+        "きゅうり毎日食べてほしい", "作ってあれば",
+        "シャカシャカきゅうりをシリーズ化",
+        "勝手に、毎週日曜日をシャカシャカサンデー",
+        "西田のきゅうり✖️SNS会", "西田のきゅうりを食べてみた",
+        "きゅうり入れてみた", "バジルソースが足りないのか",
+        "2025年は麻辣湯がトレンド", "キーマカレーはひき肉を使うなら",
+        "こちらのレシピをベースにアレンジ案をまとめました",
+        "イメージはこんな感じ",
+        "もし「売る」前提なら",
+        "この企画で当たりやすいのは",
+    ]
+    if any(p in stripped for p in non_recipe_phrases):
+        return None
+
+    # カレンダーメモ（日付のみ）
+    if re.match(r'^\d+/\d+\s+(節分|バレンタイン|ねこの日|マヨネーズの日|ひなまつり)', stripped):
+        return None
+
+    # 経済・市場分析の断片
+    market_phrases = ["ブロッコリーを作る人が増える", "天気が順調", "たくさんとれる",
+                      "ブロッコリーが安くなる", "消費者が安いブロッコリー",
+                      "きゅうりの価格は上がらない", "豚、鶏、魚も焼いて、ソースをかける"]
+    if any(p in stripped for p in market_phrases):
+        return None
+
+    # マーケティング・イベント告知
+    marketing_phrases = ["#西尾においでん", "顔出しパネルの写真を投稿したら",
+                         "SNSレシピストック", "エイプリルフールねた",
+                         "豚、鶏、魚も焼いて"]
+    if any(p in stripped for p in marketing_phrases):
+        return None
+
+    # 単語断片（Wasabi / Bacon 等、英語のみ1〜2語）
+    if re.match(r'^[A-Za-z]+$', stripped) or re.match(r'^[A-Za-z]+ [A-Za-z]+$', stripped):
+        return None
+
+    # きゅうり占いのフレーズ
+    fortune_phrases = ["きゅうりを折った時の断面", "できるよ。いわゆる正式な占い",
+                       "スパッと気持ちよく折れる", "グニャっと曲がってから",
+                       "種がきれいに整ってる", "みずみずしくてツヤがある",
+                       "星っぽく見える", "ハートっぽい", "完全に遊びだけど"]
+    if any(p in stripped for p in fortune_phrases):
+        return None
+
+    # 「に」で始まるような明らかな断片
+    if re.match(r'^[にをはがもへ]', stripped):
+        return None
+
+    # コメント・感想系（レシピ名でない）
+    comment_phrases = [
+        "焼肉の定番にしたい", "これにきゅうりも追加",
+        "玉子、ツナ、ウィンナー、など、",
+        "きゅうりを芯にして、衣と油でカロリーを稼ぐタイプ",
+        "きゅうりを\"器\"にして中に高カロリー詰め込む",
+        'きゅうりを"器"にして中に高カロリー詰め込む',
+        "きゅうり＋濃厚ごまだれ＋肉で一気に稼ぐ",
+        "きゅうりを\"フルーツ枠\"に偽装",
+        'きゅうりを"フルーツ枠"に偽装',
+        "麺＋油で確実に100倍突破",
+        "きゅうりをポキッと折った断面を観察して",
+    ]
+    if any(p in stripped for p in comment_phrases):
+        return None
+
+    # きゅうり占いの番号付き項目
+    if re.match(r'^[①②③④⑤⑥]\s+(種の形|水分の多さ|折れ方|断面の形)', stripped):
+        return None
+
+    # 末尾に閉じ括弧だけ残っているケースをクリーンアップ
+    stripped = stripped.rstrip("】")
+
+    return stripped if stripped else None
 
 
 def build_recipes(messages):
